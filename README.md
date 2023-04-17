@@ -26,6 +26,8 @@ I've made a script to fix this in case anyone else still plays this game.
 
 The game has an internal flag telling it whether to advance the game/render the screen. During scene transitions this is set to false to avoid any wierd partial renders. The game should set this flag back to true when it is done loading, but doesn't do that very quickly (often taking many seconds, increasing every menu transition). I don't exactly know why, some bug in the loading logic maybe? Alt-tab forces the game to re-render so works around this bug. I edited the executable to skip this check and always re-render. Loads are now almost instant on my machine.
 
+**Update 2023-04-17** - Thanks to [CookiePLMonster](https://github.com/CookiePLMonster) in [this issue](https://github.com/greghope667/master-rallye-freeze-patcher/issues/1) helped me figure out what causes the bug. In summary: When rendering is disabled (during loading), the game loop runs too quick and elapsed time becomes 0 seconds due to float subtraction underflow. The game thinks no time has elapsed and therefore doesn't do any loading. My fix apparently worked around this by always enabling rendering.
+
 ## Possible side effects
 
 We've disabled the rendering pause during the load screens so the game may flicker in menu transitions. Potentially increases CPU/GPU load but none that I can measure for my system. Otherwise I've noticed no other side-effects from this.
