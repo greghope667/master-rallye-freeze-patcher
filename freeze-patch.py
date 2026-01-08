@@ -1,72 +1,87 @@
 import tkinter as tk
 from tkinter import filedialog
 from tkinter import messagebox
-import hashlib
 import traceback
+import typing
 
 root = tk.Tk()
 root.withdraw()
 
-TITLE = "Master Rallye Menu Freeze Patcher"
+TITLE = "Master Rallye Menu Freeze Patcher v1.1"
 
-PATCH_ADDR = 0x0024a1bc
-HASH_PATCHED = "4e87eb51874111a6065df64504f165f1"
-HASH_ORIG = "1f7cb6d6371feada438dc70df6beec4f"
-VAL_PATCHED = b"\x75\x00"
-VAL_ORIG = b"\x75\x11"
+ORIG_BYTES  = b"\x10\xeb\x07\x8b\x54\x24\x10\x89\x56\x48\x85\xff\x75\x11\x8b\x44"
+PATCH_BYTES = b"\x10\xeb\x07\x8b\x54\x24\x10\x89\x56\x48\x85\xff\x75\x00\x8b\x44"
+#                                                                     ^
+#                                                                  this one
 
-def hash(fname : str) -> str:
-    md5 = hashlib.md5()
+class SearchFailure(Exception):
+    pass
+
+
+def search_executable(fname : str) -> typing.Tuple[bool, int]:
     with open(fname, "rb") as f:
-        for block in iter(lambda: f.read(4096), b""):
-            md5.update(block)
-    return md5.hexdigest()
+        bs = f.read()
+        if (addr := bs.find(ORIG_BYTES)) != -1:
+            bs = bs[addr+1:]
+            if ORIG_BYTES in bs or PATCH_BYTES in bs:
+                raise SearchFailure("pattern found in multiple locations")
 
-def apply_patch(fname : str, patch : bool=True):
+            return False, addr
+        
+        elif (addr := bs.find(PATCH_BYTES)) != -1:
+            bs = bs[addr+1:]
+            if ORIG_BYTES in bs or PATCH_BYTES in bs:
+                raise SearchFailure("pattern found in multiple locations")
+
+            return True, addr
+
+        else:
+            raise SearchFailure("pattern not found")
+
+
+def apply_patch(fname : str, patch : bool, addr : int):
     with open(fname, "r+b") as f:
-        f.seek(PATCH_ADDR)
-        current = f.read(2)
-        assert current == (VAL_ORIG if patch else VAL_PATCHED)
-        f.seek(PATCH_ADDR)
-        f.write((VAL_PATCHED if patch else VAL_ORIG))
+        f.seek(addr)
+        current = f.read(len(ORIG_BYTES))
+        assert current == (ORIG_BYTES if patch else PATCH_BYTES)
+        f.seek(addr)
+        f.write((PATCH_BYTES if patch else ORIG_BYTES))
+
 
 def main():
     try:
+        answer = False
         messagebox.showinfo(TITLE, "Please select path to MRallye.exe")
         fpath = filedialog.askopenfilename()
-        fhash = hash(fpath)
-        answer = False
+        patched, addr = search_executable(fpath)
 
-        if (fhash == HASH_ORIG):
+        if not patched:
             answer = messagebox.askyesno(TITLE, 
                 "This appears to be an unpatched executable. Apply patch?")
             if (answer):
-                apply_patch(fpath, True)
-
-        elif (fhash == HASH_PATCHED):
-            answer = messagebox.askyesno(TITLE, 
-                "This executable appears to already be patched. Remove patch?")
-            if (answer):
-                apply_patch(fpath, False)
+                apply_patch(fpath, True, addr)
 
         else:
             answer = messagebox.askyesno(TITLE, 
-                "WARNING: Did not recognise the executable file. Attempt "
-                "patch anyway? (potentially unsafe)")
+                "This executable appears to already be patched. Remove patch?")
             if (answer):
-                apply_patch(fpath, True)
+                apply_patch(fpath, False, addr)
 
         if (answer):
             messagebox.showinfo(TITLE, "Process completed successfully")
 
+    except SearchFailure as e:
+        messagebox.showerror(TITLE,
+            f"Unable to match instruction sequence for patching:\n{e}\n"
+             "Please check this is the correct executable and you have read/write permissions for the file\n"
+             "\n"
+             "This script might need updating to handle this executable, "
+             "consider reporting this to the developer"
+        )
     except PermissionError:
         messagebox.showerror(TITLE, 
             f"Permission error accessing\n{fpath}.\nTry copying the executable to a "
              "non-admin area (such as My Documents) and try again")
-    except AssertionError:
-        messagebox.showerror(TITLE, 
-            "Unable to apply patch - couldn't find the instruction to fix. "
-            "Please check this is the correct executable and you have read/write permissions for the file")
     except Exception as e:
         tb = traceback.format_exc()
         messagebox.showerror(TITLE, 
